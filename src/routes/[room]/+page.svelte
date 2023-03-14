@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
     import { page } from "$app/stores"
-	import { fromPairs, keys } from "lodash";
 	import {
 		relayInit,
 		generatePrivateKey,
@@ -141,7 +140,7 @@
 
 		delete peers[id];
 
-		users = keys(peers)
+		users = Object.keys(peers)
 
 		console.log(`removed rtc peer connection ${id}`);
 	};
@@ -158,7 +157,7 @@
 		peers[id] = pc;
 
 		// update userlist
-		users = keys(peers)
+		users = Object.keys(peers)
 
 		// create a new offer
 		const offer = await pc.createOffer();
@@ -201,7 +200,7 @@
 
 		peers[id] = pc;
 
-		users = keys(peers)
+		users = Object.keys(peers)
 
 		const desc = new RTCSessionDescription(offer);
 
