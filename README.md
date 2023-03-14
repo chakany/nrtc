@@ -1,0 +1,2 @@
+# nrtc
+Hell on nostr
