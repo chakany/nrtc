@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-    import { page } from "$app/stores"
+	import { page } from "$app/stores";
 	import {
 		relayInit,
 		generatePrivateKey,
@@ -20,31 +20,37 @@
 	let remoteAudioElement;
 
 	onMount(() => {
-        remoteStream = new MediaStream();
+		remoteStream = new MediaStream();
 		remoteAudioElement = document.querySelector("#remoteAudio");
 		// @ts-ignore
 		remoteAudioElement!.srcObject = remoteStream;
 
-        navigator.mediaDevices
-		.getUserMedia({ audio: true })
-		.then((stream) => {
-			localStream = stream;
+		navigator.mediaDevices
+			.getUserMedia({ audio: true })
+			.then((stream) => {
+				localStream = stream;
 
-			// analyse stream to get volume of input sound
-			getSoundVolume(localStream.clone(), (vol: number) => {
-				// set volume
-				volume = vol
+				// analyse stream to get volume of input sound
+				getSoundVolume(localStream.clone(), (vol: number) => {
+					// set volume
+					volume = vol;
 
-				// permit audio transmission when
-				// vol is higher then threshold
-				localStream.getAudioTracks()[0].enabled = vol > threshold;
+					// permit audio transmission when
+					// vol is higher then threshold
+					localStream.getAudioTracks()[0].enabled = vol > threshold;
+				});
+
+				relay.connect();
+				mediaDeviceInit = true;
+			})
+			.catch((err) => {
+				mediaDeviceInit = false;
 			});
 
-			relay.connect();
-			mediaDeviceInit = true
-		})
-		.catch((err) => {
-			mediaDeviceInit = false
+		window.addEventListener("beforeunload", function (e) {
+			if (relay.status === 1) {
+				postToRelay("disconnect", "", "");
+			}
 		});
 	});
 
@@ -56,7 +62,7 @@
 	let privkey = generatePrivateKey();
 	let pubkey = getPublicKey(privkey);
 	console.log(pubkey);
-    let room = $page.params.room
+	let room = $page.params.room;
 
 	async function postToRelay(type: string, mPubkey: string, msg: any) {
 		let event: Event = {
@@ -65,21 +71,19 @@
 			sig: "",
 			pubkey,
 			created_at: Math.floor(Date.now() / 1000),
-			tags: [
-				["type", type],
-			],
-			content: ""
+			tags: [["type", type]],
+			content: "",
 		};
 		switch (type) {
 			case "answer":
 			case "offer":
 			case "candidate":
-				event.tags.push(["p", mPubkey])
-				event.tags.push(["r", await nip04.encrypt(privkey, mPubkey, room)])
-				event.content = await nip04.encrypt(privkey, mPubkey, JSON.stringify(msg))
+				event.tags.push(["p", mPubkey]);
+				event.tags.push(["r", await nip04.encrypt(privkey, mPubkey, room)]);
+				event.content = await nip04.encrypt(privkey, mPubkey, JSON.stringify(msg));
 				break;
 			default:
-				event.tags.push(["r", room])
+				event.tags.push(["r", room]);
 		}
 		event.id = getEventHash(event);
 		event.sig = signEvent(event, privkey);
@@ -105,15 +109,19 @@
 		sub.on("event", async (event: Event) => {
 			if (event.pubkey === pubkey) return;
 			console.log("found event", event);
-			let newRoom: string = ""
-			let content: string = ""
+			let newRoom: string = "";
+			let content: string = "";
 			if (event.tags.find((v) => v[0] == "p")) {
-				newRoom = await nip04.decrypt(privkey, event.pubkey, event.tags.find((v) => v[0] == "r")![1])
+				newRoom = await nip04.decrypt(
+					privkey,
+					event.pubkey,
+					event.tags.find((v) => v[0] == "r")![1]
+				);
 				if (newRoom !== room) return;
-				content = await nip04.decrypt(privkey, event.pubkey, event.content)
+				content = await nip04.decrypt(privkey, event.pubkey, event.content);
 			}
-			let type = event.tags.find((v) => v[0] == "type")
-			if (!type) return
+			let type = event.tags.find((v) => v[0] == "type");
+			if (!type) return;
 			switch (type[1]) {
 				case "connect":
 					initRTCPeerConnection(event.pubkey);
@@ -157,7 +165,7 @@
 
 		delete peers[id];
 
-		users = Object.keys(peers)
+		users = Object.keys(peers);
 
 		console.log(`removed rtc peer connection ${id}`);
 	};
@@ -174,7 +182,7 @@
 		peers[id] = pc;
 
 		// update userlist
-		users = Object.keys(peers)
+		users = Object.keys(peers);
 
 		// create a new offer
 		const offer = await pc.createOffer();
@@ -195,6 +203,11 @@
 		const pc = peers[id];
 
 		if (!pc) return;
+		pc.oniceconnectionstatechange = function () {
+			if (pc.iceConnectionState == "disconnected") {
+				removeRTCPeerConnection(id);
+			}
+		};
 
 		if (!answer) return;
 
@@ -214,10 +227,15 @@
 		addRemoteStream(pc);
 
 		pc.onicecandidate = sendIceCandidate(id);
+		pc.oniceconnectionstatechange = function () {
+			if (pc.iceConnectionState == "disconnected") {
+				removeRTCPeerConnection(id);
+			}
+		};
 
 		peers[id] = pc;
 
-		users = Object.keys(peers)
+		users = Object.keys(peers);
 
 		const desc = new RTCSessionDescription(offer);
 
@@ -281,7 +299,7 @@
 
 <div class="app">
 	<div class="panel">
-        YOU ARE: {pubkey}
+		YOU ARE: {pubkey}
 		<h4>Userlist</h4>
 		<ul>
 			{#each users as uid, i}
@@ -293,15 +311,13 @@
 		<h4>Settings</h4>
 		<p>
 			<input type="range" min="0" max="100" class="slider" bind:value={threshold} />
-            <br />
-            THRESHOLD SLIDER - ALL THE WAY DOWN TO MAKE YOUR MICROPHONE MORE SENSITIVE AND VICE-VERSA
+			<br />
+			THRESHOLD SLIDER - ALL THE WAY DOWN TO MAKE YOUR MICROPHONE MORE SENSITIVE AND VICE-VERSA
 		</p>
 		<p>
 			<progress class="progress" class:green={volume >= threshold} value={volume} max="100" />
-            <br />
-            MIC ACTIVITY
+			<br />
+			MIC ACTIVITY
 		</p>
 	</div>
 </div>
-
-
