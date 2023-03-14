@@ -7,6 +7,7 @@
 		getPublicKey,
 		getEventHash,
 		signEvent,
+		nip04,
 		type Event,
 	} from "nostr-tools";
 
@@ -57,7 +58,7 @@
 	console.log(pubkey);
     let room = $page.params.room
 
-	function postToRelay(type: string, mPubkey: string, msg: any) {
+	async function postToRelay(type: string, mPubkey: string, msg: any) {
 		let event: Event = {
 			kind: 25050,
 			id: "",
@@ -66,11 +67,20 @@
 			created_at: Math.floor(Date.now() / 1000),
 			tags: [
 				["type", type],
-				["r", room],
 			],
-			content: typeof msg == "object" ? JSON.stringify(msg) : msg,
+			content: ""
 		};
-		if (pubkey !== "") event.tags.push(["p", mPubkey]);
+		switch (type) {
+			case "answer":
+			case "offer":
+			case "candidate":
+				event.tags.push(["p", mPubkey])
+				event.tags.push(["r", await nip04.encrypt(privkey, mPubkey, room)])
+				event.content = await nip04.encrypt(privkey, mPubkey, JSON.stringify(msg))
+				break;
+			default:
+				event.tags.push(["r", room])
+		}
 		event.id = getEventHash(event);
 		event.sig = signEvent(event, privkey);
 		let pub = relay.publish(event);
@@ -89,15 +99,22 @@
 			},
 			{
 				kinds: [25050],
-				"#r": [room],
 				"#p": [pubkey],
 			},
 		]);
-		sub.on("event", (event: Event) => {
+		sub.on("event", async (event: Event) => {
 			if (event.pubkey === pubkey) return;
 			console.log("found event", event);
-			const content = event.content ? JSON.parse(event.content) : "";
-			switch (event.tags.find((v) => v[0] == "type")![1]) {
+			let newRoom: string = ""
+			let content: string = ""
+			if (event.tags.find((v) => v[0] == "p")) {
+				newRoom = await nip04.decrypt(privkey, event.pubkey, event.tags.find((v) => v[0] == "r")![1])
+				if (newRoom !== room) return;
+				content = await nip04.decrypt(privkey, event.pubkey, event.content)
+			}
+			let type = event.tags.find((v) => v[0] == "type")
+			if (!type) return
+			switch (type[1]) {
 				case "connect":
 					initRTCPeerConnection(event.pubkey);
 					break;
@@ -105,13 +122,13 @@
 					removeRTCPeerConnection(event.pubkey);
 					break;
 				case "answer":
-					onRTCAnswer(event.pubkey, content);
+					onRTCAnswer(event.pubkey, JSON.parse(content));
 					break;
 				case "offer":
-					onRTCoffer(event.pubkey, content);
+					onRTCoffer(event.pubkey, JSON.parse(content));
 					break;
 				case "candidate":
-					onRTCIceCandidate(event.pubkey, content);
+					onRTCIceCandidate(event.pubkey, JSON.parse(content));
 					break;
 				default:
 					break;
