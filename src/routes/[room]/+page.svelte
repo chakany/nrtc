@@ -12,7 +12,7 @@
 	} from "nostr-tools";
 
 	const RTC_CONFIG = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-	const relay = relayInit("wss://nostr.fmt.wiz.biz");
+	const relay = relayInit("wss://nos.lol");
 	console.log("hello");
 	const peers: any = {};
 
